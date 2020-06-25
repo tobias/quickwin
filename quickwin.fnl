@@ -1,13 +1,17 @@
+(local core (require :lgi.core))
+(local lgi (require :lgi))
 (local sfun (require :std.functional))
 (local sio (require :std.io))
-(local lgi (require :lgi))
-(local view (require :fennelview))
-(local std (require :std))
 (local stable (require :std.table))
+(local std (require :std))
+(local view (require :fennelview))
 (local xctrl (require :xctrl))
 
-(local gtk (lgi.require "Gtk" "3.0"))
 (local gdk (lgi.require "Gdk" "3.0"))
+(local glib (core.gi.require :GLib))
+(local gtk (lgi.require "Gtk" "3.0"))
+
+(var state {})
 
 ;; hack to work around singleton restriction. From the xctrl docs:
 ;; Note that only one instance of the xctrl object at a time is
@@ -148,33 +152,67 @@ filter-text."
     (list-store:clear)
     (->> filtered-win-list
          (sort-windows filter-text)
-         (map #(list-store:append [$.id $.full-name])))
+         (map #(list-store:append [$.id (. state $.id) $.process-name $.title])))
     (selection:select_path (gtk.TreePath.new_from_string "0"))))
 
-(local columns {:id 1
-                :title 2})
+(local state-file "/home/tcrawley/.quickwin")
 
-(lambda activate-selection [window selection]
+(lambda string? [s]
+  (= "string" (type s)))
+
+(lambda save-state [s]
+  (pp s)
+  (let [f (io.open state-file "w")]
+    (each [k v (pairs s)]
+      (when (string? k)
+        (f:write k "|" v "\n")))
+    (f:close)))
+
+(lambda read-state []
+  (let [s {}]
+    (each [_ line (ipairs (sio.readlines state-file))]
+      (let [(_ _ text win-id) (line:find "(.*)%|(.*)")
+            win-id (tonumber win-id)]
+        ;; support bidirectional lookup
+        (tset s text win-id)
+        (tset s win-id text)))
+    s))
+
+(local columns {:id 1
+                :phrase 2
+                :process 3
+                :title 4})
+
+(lambda activate-selection [buffer window selection]
   (let [(model iter) (selection:get_selected)]
     (when model
-      (xc:activate_win (. (. model iter) columns.id))
+      (let [win-id (-> model (. iter) (. columns.id))]
+        (xc:activate_win win-id)
+        (when (> (length buffer.text) 0)
+          (tset state buffer.text win-id)
+          (save-state state)))
       (window:destroy))))
 
-(lambda handle-key-press [tree-view window event]
+(lambda handle-key-press [buffer tree-view window event]
   (if (= gdk.KEY_Escape event.keyval)
       (window:destroy)
       (= gdk.KEY_Return event.keyval)
-      (activate-selection window (tree-view:get_selection))
+      (activate-selection buffer window (tree-view:get_selection))
       false))
 
 (lambda window [window-list]
   (let [list-store (gtk.ListStore.new {columns.id lgi.GObject.Type.INT64
+                                       columns.phrase lgi.GObject.Type.STRING
+                                       columns.process lgi.GObject.Type.STRING
                                        columns.title lgi.GObject.Type.STRING})
         buffer (gtk.EntryBuffer)
         tree-view (gtk.TreeView
                    {:id :view
                     :model list-store
-                    1 (text-column "Window" columns.title)})
+                    :headers-visible false
+                    1 (text-column "Phrase" columns.phrase)
+                    2 (text-column "Process" columns.process)
+                    3 (text-column "Window" columns.title)})
         filter-fn #(apply-filter buffer.text tree-view window-list list-store)]
     (set buffer.on_inserted_text filter-fn)
     (set buffer.on_deleted_text filter-fn)
@@ -186,12 +224,12 @@ filter-text."
       :default_width 400
       :default_height 300
       :on_destroy gtk.main_quit
-      :on_key_press_event (partial handle-key-press tree-view)
+      :on_key_press_event (partial handle-key-press buffer tree-view)
       1 (gtk.Box
          {:orientation :VERTICAL
           :spacing 5
           1 (gtk.Entry {:id :filter
-                        :buffer buffer})
+                        : buffer})
           2 tree-view})})))
 
 (lambda process-name [pid]
@@ -209,13 +247,14 @@ filter-text."
        (filter #(= "normal" (. $ :type)))
        (map #(let [pid (xc:get_pid_of_win $.id)
                    process-name (process-name pid)
-                   win-title (xc:get_win_title $.id)]
-               (stable.merge $ {:pid pid
-                                :process-name process-name
-                                :title win-title
-                                :full-name (.. process-name " | " win-title)})))))
+                   title (xc:get_win_title $.id)]
+               (stable.merge $ {: pid
+                                : process-name
+                                : title
+                                :full-name (.. process-name " | " title)})))))
 
 (lambda run []
+  (set state (read-state))
   (let [w (window (window-list))]
     (w:show_all))
   (gtk.main))
@@ -223,7 +262,6 @@ filter-text."
 ;; --- tests ---
 
 (lambda fuzzy-search-test [lu]
-  (pp nil)
   (lu.assertEquals true false))
 
 {: run
