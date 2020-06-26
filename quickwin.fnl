@@ -34,6 +34,9 @@
 (lambda reduce [f init xs]
   (sfun.reduce f init std.elems xs))
 
+(lambda reduce-kv [f init xs]
+  (sfun.reduce f init pairs xs))
+
 (lambda assoc [t k v]
   (tset t k v)
   t)
@@ -121,13 +124,14 @@ filter-text."
   (if win.matches
       (let [filter-len (length filter-text)
             base-score (length win.matches)
-            score
-            (reduce #(+ $1 (/ 10 (+ 1 (- filter-len
-                                         (- (last $2) (first $2))))))
-                    base-score win.matches)]
-        (print filter-text win.full-name score)
+            score (reduce
+                   #(+ $1 (/ 20
+                             (+ 1
+                                (- filter-len
+                                   (- (last $2) (first $2))))))
+                   base-score win.matches)]
+        (print filter-text win.full-name base-score score)
         score)
-
       0))
 
 (lambda sort-windows [filter-text window-list]
@@ -141,6 +145,10 @@ filter-text."
                           (< $1.full-name $2.full-name)))
                     false)))
 
+(lambda set-selection [tree-view idx]
+  (let [selection (tree-view:get_selection)]
+    (selection:select_path (gtk.TreePath.new_from_string (.. (- idx 1))))))
+
 (lambda apply-filter [filter-text tree-view window-list list-store]
   (let [window-list (stable.clone window-list)
         filtered-win-list (if (> (string.len filter-text) 0)
@@ -148,12 +156,17 @@ filter-text."
                                    (map #(assoc $ :matches (fuzzy-search $.full-name filter-text)))
                                    (filter #(> (length $.matches) 0)))
                               window-list)
-        selection (tree-view:get_selection)]
+        selected-idx (reduce-kv (fn [idx win-idx win]
+                                  (if (= filter-text (. state win.id))
+                                      win-idx
+                                      idx))
+                                1
+                                filtered-win-list)]
     (list-store:clear)
     (->> filtered-win-list
-         (sort-windows filter-text)
-         (map #(list-store:append [$.id (. state $.id) $.process-name $.title])))
-    (selection:select_path (gtk.TreePath.new_from_string "0"))))
+         (map (fn [win]
+                (list-store:append [win.id (. state win.id) win.process-name win.title]))))
+    (set-selection tree-view selected-idx)))
 
 (local state-file "/home/tcrawley/.quickwin")
 
