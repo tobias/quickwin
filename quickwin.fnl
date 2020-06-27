@@ -285,11 +285,5 @@ filter-text."
     (w:show_all))
   (gtk.main))
 
-;; --- tests ---
-
-(lambda fuzzy-search-test [lu]
-  (lu.assertEquals true false))
-
-{: activate
- :tests [fuzzy-search-test]}
+{: activate}
 
