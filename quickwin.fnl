@@ -290,7 +290,7 @@ filter-text."
                                 : title
                                 :full-name (.. process-name " | " title)})))))
 
-(lambda run []
+(lambda activate []
   (set state (read-state))
   (let [w (window (window-list))]
     (w:show_all))
@@ -301,6 +301,6 @@ filter-text."
 (lambda fuzzy-search-test [lu]
   (lu.assertEquals true false))
 
-{: run
+{: activate
  :tests [fuzzy-search-test]}
 
