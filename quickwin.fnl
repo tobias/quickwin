@@ -47,11 +47,6 @@
 (lambda last [xs]
   (. xs (length xs)))
 
-(lambda bold [start end]
-  (doto (lgi.Pango.Attribute.weight_new lgi.Pango.Weight.ULTRAHEAVY)
-    (tset :start_index start)
-    (tset :end_index end)))
-
 (lambda str->list [s]
   (let [l []]
     (for [i 1 (length s)]
@@ -75,18 +70,6 @@
                               end)))))
     matches))
 
-(lambda fuzzy-search-re [text filter-s st]
-  (let [(start end) (text:find (table.concat (str->list filter-s) ".-") st)]
-    (if (not start)
-        []
-
-        (and end (< (length text) end))
-        [[start end]]
-
-        (let [more (fuzzy-search text filter-s end)]
-          (table.insert more 1 [start end])
-          more))))
-
 (lambda range [start end]
   (let [r []]
     (for [i start end]
@@ -105,6 +88,12 @@
   )
 
 (lambda text-column [text pos]
+  (gtk.TreeViewColumn
+   {:title text
+    1 [(gtk.CellRendererText)
+       {:text pos}]}))
+
+(lambda italic-text-column [text pos]
   (let [renderer (gtk.CellRendererText)
         col (gtk.TreeViewColumn
              {:title text
@@ -113,7 +102,7 @@
     (col:set renderer
              (fn [_tree-c cell-r _model _iter]
                (let [attr-list (lgi.Pango.AttrList.new)]
-                 (attr-list:insert (bold 0 2))
+                 (attr-list:insert (lgi.Pango.Attribute.style_new lgi.Pango.Style.ITALIC))
                  (tset cell-r :attributes attr-list))))
     col))
 
@@ -247,7 +236,7 @@ filter-text."
                    {:id :view
                     :model list-store
                     :headers-visible false
-                    1 (text-column "Phrase" columns.phrase)
+                    1 (italic-text-column "Phrase" columns.phrase)
                     2 (text-column "Process" columns.process)
                     3 (text-column "Window" columns.title)})
         filter-fn #(apply-filter buffer.text tree-view window-list list-store)]
