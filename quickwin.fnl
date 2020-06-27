@@ -1,4 +1,3 @@
-(local core (require :lgi.core))
 (local lgi (require :lgi))
 (local sfun (require :std.functional))
 (local sio (require :std.io))
@@ -8,10 +7,9 @@
 (local xctrl (require :xctrl))
 
 (local gdk (lgi.require "Gdk" "3.0"))
-(local glib (core.gi.require :GLib))
 (local gtk (lgi.require "Gtk" "3.0"))
 
-(var state {})
+(local phrase-mapping {})
 
 ;; hack to work around singleton restriction. From the xctrl docs:
 ;; Note that only one instance of the xctrl object at a time is
@@ -76,17 +74,6 @@
       (table.insert r i))
     r))
 
-(lambda match->positions [text filter-s [start end]]
-  (if (= (+ 1 (- end start)) (length filter-s))
-      (range start end)
-
-      ))
-
-(lambda matches->positions [text filter-s matches]
-  ;; if len matches == len filter-s, done!
-  ;;
-  )
-
 (lambda text-column [text pos]
   (gtk.TreeViewColumn
    {:title text
@@ -123,17 +110,6 @@ filter-text."
         score)
       0))
 
-(lambda sort-windows [filter-text window-list]
-  (print (length window-list))
-  (stable.sort window-list
-               #(if (and $1 $2)
-                    (let [score-1 (match-score filter-text $1)
-                          score-2 (match-score filter-text $2)]
-                      (if (and score-1 score-2)
-                          (> score-1 score-2) ;; reverse sort
-                          (< $1.full-name $2.full-name)))
-                    false)))
-
 (lambda set-selection [tree-view idx]
   (let [selection (tree-view:get_selection)]
     (selection:select_path (gtk.TreePath.new_from_string (.. (- idx 1))))))
@@ -146,7 +122,7 @@ filter-text."
                                    (filter #(> (length $.matches) 0)))
                               window-list)
         selected-idx (reduce-kv (fn [idx win-idx win]
-                                  (if (= filter-text (. state win.id))
+                                  (if (= filter-text (. phrase-mapping win.id))
                                       win-idx
                                       idx))
                                 1
@@ -154,31 +130,11 @@ filter-text."
     (list-store:clear)
     (->> filtered-win-list
          (map (fn [win]
-                (list-store:append [win.id (. state win.id) win.process-name win.title]))))
+                (list-store:append [win.id (. phrase-mapping win.id) win.process-name win.title]))))
     (set-selection tree-view selected-idx)))
-
-(local state-file "/home/tcrawley/.quickwin")
 
 (lambda string? [s]
   (= "string" (type s)))
-
-(lambda save-state [s]
-  (pp s)
-  (let [f (io.open state-file "w")]
-    (each [k v (pairs s)]
-      (when (string? k)
-        (f:write k "|" v "\n")))
-    (f:close)))
-
-(lambda read-state []
-  (let [s {}]
-    (each [_ line (ipairs (sio.readlines state-file))]
-      (let [(_ _ text win-id) (line:find "(.*)%|(.*)")
-            win-id (tonumber win-id)]
-        ;; support bidirectional lookup
-        (tset s text win-id)
-        (tset s win-id text)))
-    s))
 
 (local columns {:id 1
                 :phrase 2
@@ -191,8 +147,9 @@ filter-text."
       (let [win-id (-> model (. iter) (. columns.id))]
         (xc:activate_win win-id)
         (when (> (length buffer.text) 0)
-          (tset state buffer.text win-id)
-          (save-state state)))
+          ;; support bidirectional lookup
+          (tset phrase-mapping buffer.text win-id)
+          (tset phrase-mapping win-id buffer.text)))
       (window:destroy))))
 
 (lambda rotate-selection [dir tree-view list-store]
@@ -280,7 +237,6 @@ filter-text."
                                 :full-name (.. process-name " | " title)})))))
 
 (lambda activate []
-  (set state (read-state))
   (let [w (window (window-list))]
     (w:show_all))
   (gtk.main))
