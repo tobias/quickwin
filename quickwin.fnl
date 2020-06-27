@@ -206,11 +206,35 @@ filter-text."
           (save-state state)))
       (window:destroy))))
 
-(lambda handle-key-press [buffer tree-view window event]
+(lambda rotate-selection [dir tree-view list-store]
+  (let [selection (tree-view:get_selection)
+        curr-row (first (selection:get_selected_rows))
+        ;; converting from gtk 0-indexing to lua 1-indexing
+        row-idx (+ 1 (first (curr-row:get_indices)))
+        new-row-idx (if (= dir :down)
+                        (+ row-idx 1)
+                        (- row-idx 1))
+        total-rows (list-store:iter_n_children)
+        new-row-idx (if (> new-row-idx total-rows)
+                        1
+
+                        (< new-row-idx 1)
+                        total-rows
+
+                        new-row-idx)]
+    (set-selection tree-view new-row-idx)
+    ;; return true to abort further event processing
+    true))
+
+(lambda handle-key-press [buffer tree-view list-store window event]
   (if (= gdk.KEY_Escape event.keyval)
       (window:destroy)
       (= gdk.KEY_Return event.keyval)
       (activate-selection buffer window (tree-view:get_selection))
+      (= gdk.KEY_Up event.keyval)
+      (rotate-selection :up tree-view list-store)
+      (= gdk.KEY_Down event.keyval)
+      (rotate-selection :down tree-view list-store)
       false))
 
 (lambda window [window-list]
@@ -237,7 +261,7 @@ filter-text."
       :default_width 400
       :default_height 300
       :on_destroy gtk.main_quit
-      :on_key_press_event (partial handle-key-press buffer tree-view)
+      :on_key_press_event (partial handle-key-press buffer tree-view list-store)
       1 (gtk.Box
          {:orientation :VERTICAL
           :spacing 5
