@@ -89,7 +89,7 @@
     (col:set renderer
              (fn [_tree-c cell-r _model _iter]
                (let [attr-list (lgi.Pango.AttrList.new)]
-                 (attr-list:insert (lgi.Pango.Attribute.style_new lgi.Pango.Style.ITALIC))
+                 (attr-list:insert (lgi.Pango.Attribute.weight_new lgi.Pango.Weight.BOLD))
                  (tset cell-r :attributes attr-list))))
     col))
 
@@ -204,13 +204,15 @@ filter-text."
 
     (gtk.Window
      {:title "QuickWin"
-      :default_width 400
-      :default_height 300
+      :default_width 500
+      ;;:default_height 300
+      :decorated false
+      :window_position gtk.WindowPosition.CENTER_ALWAYS
       :on_destroy gtk.main_quit
       :on_key_press_event (partial handle-key-press buffer tree-view list-store)
       1 (gtk.Box
          {:orientation :VERTICAL
-          :spacing 5
+          :spacing 3
           1 (gtk.Entry {:id :filter
                         : buffer})
           2 tree-view})})))
