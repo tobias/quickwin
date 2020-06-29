@@ -244,20 +244,21 @@ filter-text."
     ;; populates the list store with everyting
     (apply-filter "" tree-view window-list list-store)
 
-    (gtk.Window
-     {:title "QuickWin"
-      :default_width 500
-      ;;:default_height 300
-      :decorated false
-      :window_position gtk.WindowPosition.CENTER_ALWAYS
-      :on_destroy gtk.main_quit
-      :on_key_press_event (partial handle-key-press buffer tree-view list-store)
-      1 (gtk.Box
-         {:orientation :VERTICAL
-          :spacing 3
-          1 (gtk.Entry {:id :filter
-                        : buffer})
-          2 tree-view})})))
+    (doto (gtk.Window
+           {:title "QuickWin"
+            :default_width 500
+            ;;:default_height 300
+            :decorated false
+            :window_position gtk.WindowPosition.CENTER_ALWAYS
+            :on_destroy gtk.main_quit
+            :on_key_press_event (partial handle-key-press buffer tree-view list-store)
+            1 (gtk.Box
+               {:orientation :VERTICAL
+                :spacing 3
+                1 (gtk.Entry {:id :filter
+                              : buffer})
+                2 tree-view})})
+      (gtk.Window.set_keep_above true))))
 
 (lambda process-name [pid]
   "Looks up the name for a process from /proc/<pid>/stat"
