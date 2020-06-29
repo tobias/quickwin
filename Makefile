@@ -1,21 +1,18 @@
 %.lua: %.fnl
 	fennel --compile $< > $@
 
-quickwin.bin: quickwin.lua main.lua
-	luac -o quickwin.bin quickwin.lua main.lua
-
 .PHONY: kill
 kill:
-	kill `ps ux | grep quickwin.bin | grep -v grep | cut -f2 -d" "`
+	kill `ps ux | grep quickwin-main.lua | grep -v grep | cut -f2 -d" "`
 
 .PHONY: build
-build: quickwin.bin kill
+build: quickwin.lua quickwin-main.lua kill
 
 .PHONY: clean
 clean:
-	rm -f *.lua *.bin
+	rm -f *.lua
 
 .PHONY: autobuild
 autobuild:
-	filewatcher main.fnl quickwin.fnl "echo '-----------'; make build"
+	filewatcher quickwin-main.fnl quickwin.fnl "echo '-----------'; make build"
 
