@@ -22,7 +22,7 @@
 
 (fn init [bus]
   (local qw (require :quickwin))
-
+  (qw.init)
   (qw.activate) ;; activate qw on process start
   (listen-for-activate-signal bus qw.activate))
 

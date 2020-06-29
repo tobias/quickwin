@@ -1,3 +1,9 @@
+;; lanes has to be initialized before anything else, otherwise it
+;; fails with a type assertion
+(local lanes
+       (let [lanes (require :lanes)]
+         (lanes.configure {})))
+
 (local lgi (require :lgi))
 (local sfun (require :std.functional))
 (local sio (require :std.io))
@@ -8,18 +14,6 @@
 
 (local gdk (lgi.require "Gdk" "3.0"))
 (local gtk (lgi.require "Gtk" "3.0"))
-
-(local phrase-mapping {})
-
-;; hack to work around singleton restriction. From the xctrl docs:
-;; Note that only one instance of the xctrl object at a time is
-;; allowed to be in use. If for some reason you need to re-initialize
-;; a new object, you should set the old one to nil and call
-;; collectgarbage() twice before trying to create another new
-;; object. This will help insure that the first instance is properly
-;; cleaned up.
-(when (not (. _G :xc))
-  (global xc (xctrl.new)))
 
 (lambda pp [...] (print (view [...])))
 
@@ -93,6 +87,32 @@
                  (tset cell-r :attributes attr-list))))
     col))
 
+(local xc (xctrl.new))
+(local phrase-mapping {})
+(local window-focus-data (lanes.linda))
+;; init the linda with a value so we can read it before the thread has
+;; a chance to populate it
+(window-focus-data:set :data {})
+
+(fn xevent-listener []
+  (let [lanes (require :lanes)
+        xctrl (lanes.require :xctrl)
+        xc (xctrl.new)
+        window-focus-times {}]
+    (xc:listen (fn [ev id]
+                 (when (or (= "a" ev)  ;; activated
+                           (= "x" ev)) ;; closed
+                   (tset window-focus-times id
+                         (if (= "a" ev)
+                             (os.time) ;; this is seconds :(
+                             nil))
+                   (window-focus-data:set :data window-focus-times))
+                 true))))
+
+(lambda start-xevent-listener-thread []
+  (let [lane (lanes.gen "*" xevent-listener)]
+    (lane)))
+
 (lambda match-score [filter-text win]
   "Scores a match set. The score is the number of matches + a boosting
 factor for the compactness of the matches related to the length of the
@@ -114,6 +134,25 @@ filter-text."
   (let [selection (tree-view:get_selection)]
     (selection:select_path (gtk.TreePath.new_from_string (.. (- idx 1))))))
 
+(lambda sort-by-last-active [window-list]
+  (let [focus-data (window-focus-data:get :data)]
+    (stable.sort window-list
+                 (fn [a b]
+                   (let [a-time (or (. focus-data a.id) 0)
+                         b-time (or (. focus-data b.id) 0)]
+                     (> a-time b-time))))))
+
+(lambda make-prior-window-first [window-list]
+  "Makes the second window first so it can be quickly switched to. W/o
+  this, the first window is the one that had the focus when qw was activated."
+  (if (= 1 (length window-list))
+      window-list
+      (let [f (. window-list 1)
+            s (. window-list 2)]
+        (tset window-list 1 s)
+        (tset window-list 2 f)
+        window-list)))
+
 (lambda apply-filter [filter-text tree-view window-list list-store]
   (let [window-list (stable.clone window-list)
         filtered-win-list (if (> (string.len filter-text) 0)
@@ -121,6 +160,9 @@ filter-text."
                                    (map #(assoc $ :matches (fuzzy-search $.full-name filter-text)))
                                    (filter #(> (length $.matches) 0)))
                               window-list)
+        filtered-win-list (-> filtered-win-list
+                              (sort-by-last-active)
+                              (make-prior-window-first))
         selected-idx (reduce-kv (fn [idx win-idx win]
                                   (if (= filter-text (. phrase-mapping win.id))
                                       win-idx
@@ -183,7 +225,7 @@ filter-text."
       (rotate-selection :down tree-view list-store)
       false))
 
-(lambda window [window-list]
+(lambda make-window [window-list]
   (let [list-store (gtk.ListStore.new {columns.id lgi.GObject.Type.INT64
                                        columns.phrase lgi.GObject.Type.STRING
                                        columns.process lgi.GObject.Type.STRING
@@ -239,9 +281,13 @@ filter-text."
                                 :full-name (.. process-name " | " title)})))))
 
 (lambda activate []
-  (let [w (window (window-list))]
-    (w:show_all))
+  (let [window (make-window (window-list))]
+    (window:show_all))
   (gtk.main))
 
-{: activate}
+(lambda init []
+  (start-xevent-listener-thread))
+
+{: activate
+ : init}
 
