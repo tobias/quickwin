@@ -238,27 +238,31 @@ filter-text."
                     1 (italic-text-column "Phrase" columns.phrase)
                     2 (text-column "Process" columns.process)
                     3 (text-column "Window" columns.title)})
-        filter-fn #(apply-filter buffer.text tree-view window-list list-store)]
+        filter-fn #(apply-filter buffer.text tree-view window-list list-store)
+        window (doto (gtk.Window
+                        {:title "QuickWin"
+                         :default_width 500
+                         ;;:default_height 300
+                         :decorated false
+                         :window_position gtk.WindowPosition.CENTER_ALWAYS
+                         :on_destroy gtk.main_quit
+                         :on_key_press_event (partial handle-key-press buffer tree-view list-store)
+                         1 (gtk.Box
+                            {:orientation :VERTICAL
+                             :spacing 3
+                             1 (gtk.Entry {:id :filter
+                                           : buffer})
+                             2 tree-view})}))]
     (set buffer.on_inserted_text filter-fn)
     (set buffer.on_deleted_text filter-fn)
+    (tree-view:set_activate_on_single_click true)
+    (set tree-view.on_row_activated (fn [_ _ _]
+                                      (activate-selection buffer window
+                                                          (tree-view:get_selection))))
+    (window:set_keep_above true)
     ;; populates the list store with everyting
     (apply-filter "" tree-view window-list list-store)
-
-    (doto (gtk.Window
-           {:title "QuickWin"
-            :default_width 500
-            ;;:default_height 300
-            :decorated false
-            :window_position gtk.WindowPosition.CENTER_ALWAYS
-            :on_destroy gtk.main_quit
-            :on_key_press_event (partial handle-key-press buffer tree-view list-store)
-            1 (gtk.Box
-               {:orientation :VERTICAL
-                :spacing 3
-                1 (gtk.Entry {:id :filter
-                              : buffer})
-                2 tree-view})})
-      (gtk.Window.set_keep_above true))))
+    window))
 
 (lambda process-name [pid]
   "Looks up the name for a process from /proc/<pid>/stat"
