@@ -3,7 +3,7 @@
 
 .PHONY: kill
 kill:
-	kill `ps ux | grep quickwin-main.lua | grep -v grep | cut -f2 -d" "`
+	kill `ps ux | grep quickwin-main.lua | grep -v grep | tr -s ' ()' '\t' |  cut -f2`
 
 .PHONY: build
 build: quickwin.lua quickwin-main.lua kill
