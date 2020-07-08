@@ -6,7 +6,7 @@ kill:
 	kill `ps ux | grep quickwin-main.lua | grep -v grep | tr -s ' ()' '\t' |  cut -f2`
 
 .PHONY: build
-build: quickwin.lua quickwin-main.lua kill
+build: quickwin.lua quickwin-main.lua
 
 .PHONY: clean
 clean:
@@ -14,5 +14,5 @@ clean:
 
 .PHONY: autobuild
 autobuild:
-	filewatcher quickwin-main.fnl quickwin.fnl "echo '-----------'; make build"
+	filewatcher quickwin-main.fnl quickwin.fnl "echo '-----------'; make build kill"
 

@@ -25,9 +25,14 @@ cd xctrl
 make install EXTRA_CFLAGS="-I/usr/include/lua5.1 -fPIC" EXTRA_LDFLAGS="-Wl,--no-as-needed"
 #+END_SRC
 
+** Building
+
+Build with ~make build~.
+
 ** Setup
 
-You'll need to bind it to a keybinding - I use ~alt+tab~ to replace the default switcher.
+After building, you'll need to bind ~quickwin.sh~ to a keybinding - I
+use ~alt+tab~ to replace the default switcher.
 
 ** License
 
