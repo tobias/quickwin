@@ -1,6 +1,6 @@
 * Quickwin
 
-A fuzzy matching window switcher built with [[https://fennel-lang.org/][fennel]] and [[https://www.gtk.org/][gtk+]]. There are
+A fuzzy matching window switcher built with [[https://fennel-lang.org/][Fennel]] and [[https://www.gtk.org/][GTK]]. There are
 many like it, but this one is mine.
 
 This has only been tested on Ubuntu 20.04 with Lua 5.1.
@@ -9,18 +9,18 @@ This has only been tested on Ubuntu 20.04 with Lua 5.1.
 
 You'll need to install:
 + A few debs:
-  - ~luarocks~: to install lua packages
+  - ~luarocks~: to install Lua packages
   - ~libxmu-dev~: needed to build ~xctrl~
   - ~libdbus-glib-1-dev~: to install ~ldbus~
   All together: ~apt install luarocks libxmu-dev libdbus-glib-1-dev~
 + Some lua packages:
-  - ~luarocks install fennel~: the fennel language
-  - ~luarocks install stdlib~: nice lua addons
+  - ~luarocks install fennel~: the Fennel language
+  - ~luarocks install stdlib~: nice Lua addons
   - ~luarocks install lgi~: bindings to GObject/GTK and friends
-  - ~luarocks install lualanes~: threading for lua
+  - ~luarocks install lualanes~: threading for Lua
 + [[https://github.com/tobias/xctrl/][My fork]] of ~xctrl~ (to allow multiple connections to XWindows per process):
 #+BEGIN_SRC sh
-git clone git@github.com:tobias/xctrl.git~
+git clone git@github.com:tobias/xctrl.git
 cd xctrl
 make install EXTRA_CFLAGS="-I/usr/include/lua5.1 -fPIC" EXTRA_LDFLAGS="-Wl,--no-as-needed"
 #+END_SRC
@@ -31,7 +31,7 @@ Build with ~make build~.
 
 ** Setup
 
-After building, you'll need to bind ~quickwin.sh~ to a keybinding - I
+After building, you'll need to bind [[./quickwin.sh][quickwin.sh]] to a keybinding - I
 use ~alt+tab~ to replace the default switcher.
 
 ** License
