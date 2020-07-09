@@ -12,12 +12,14 @@ You'll need to install:
   - ~luarocks~: to install Lua packages
   - ~libxmu-dev~: needed to build ~xctrl~
   - ~libdbus-glib-1-dev~: to install ~ldbus~
+  - ~libgirepository1.0-dev~ to install ~lgi~
   All together: ~apt install luarocks libxmu-dev libdbus-glib-1-dev~
 + Some lua packages:
   - ~luarocks install fennel~: the Fennel language
   - ~luarocks install stdlib~: nice Lua addons
   - ~luarocks install lgi~: bindings to GObject/GTK and friends
-  - ~luarocks install lualanes~: threading for Lua
+  - ~luarocks install lanes~: threading for Lua
+  - ~luarocks install --server=http://luarocks.org/manifests/daurnimator ldbus DBUS_INCDIR=/usr/include/dbus-1.0/ DBUS_ARCH_INCDIR=/usr/lib/x86_64-linux-gnu/dbus-1.0/include/~: dbus bindings
 + [[https://github.com/tobias/xctrl/][My fork]] of ~xctrl~ (to allow multiple connections to XWindows per process):
 #+BEGIN_SRC sh
 git clone git@github.com:tobias/xctrl.git
