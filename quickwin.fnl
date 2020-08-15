@@ -135,13 +135,20 @@ filter-text."
   (if win.matches
       (let [filter-len (length filter-text)
             base-score (length win.matches)
+            first-match (first win.matches)
+            base-score (if (= 1 (first first-match))
+                           ;; the first match has the same char as the
+                           ;; start of the full name, so boost it
+                           ;; higher
+                           (+ base-score 100)
+                           base-score)
             score (reduce
                    #(+ $1 (/ 20
                              (+ 1
                                 (- filter-len
                                    (- (last $2) (first $2))))))
-                   base-score win.matches)]
-        (print filter-text win.full-name base-score score)
+                   base-score
+                   win.matches)]
         score)
       0))
 
@@ -156,6 +163,16 @@ filter-text."
                    (let [a-time (or (. focus-data a.id) 0)
                          b-time (or (. focus-data b.id) 0)]
                      (> a-time b-time))))))
+
+(lambda sort-by-match-score [window-list filter-text]
+  (stable.sort window-list
+               #(if (and $1 $2)
+                    (let [score-1 (match-score filter-text $1)
+                          score-2 (match-score filter-text $2)]
+                      (if (and score-1 score-2)
+                          (> score-1 score-2) ;; reverse sort
+                          false))
+                    false)))
 
 (lambda make-prior-window-first [window-list]
   "Makes the second window first so it can be quickly switched to. W/o
@@ -177,7 +194,8 @@ filter-text."
                               window-list)
         filtered-win-list (-> filtered-win-list
                               (sort-by-last-active)
-                              (make-prior-window-first))
+                              (make-prior-window-first)
+                              (sort-by-match-score filter-text))
         selected-idx (reduce-kv (fn [idx win-idx win]
                                   (if (= filter-text (. phrase-mapping win.id))
                                       win-idx
@@ -304,7 +322,7 @@ filter-text."
                (stable.merge $ {: pid
                                 : process-name
                                 : title
-                                :full-name (.. process-name " | " title)})))))
+                                :full-name (.. process-name " " title)})))))
 
 (lambda activate []
   (let [window (make-window (window-list))]
