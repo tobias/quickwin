@@ -111,6 +111,7 @@
 
 (fn xevent-listener []
   (let [lanes (require :lanes)
+        socket (lanes.require :socket)
         xctrl (lanes.require :xctrl)
         xc (xctrl.new)
         window-focus-times {}]
@@ -119,7 +120,7 @@
                            (= "x" ev)) ;; closed
                    (tset window-focus-times id
                          (if (= "a" ev)
-                             (os.time) ;; this is seconds :(
+                             (socket.gettime)
                              nil))
                    (window-focus-data:set :data window-focus-times))
                  true))))
