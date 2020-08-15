@@ -279,13 +279,19 @@ filter-text."
     (apply-filter "" tree-view window-list list-store)
     window))
 
+(local better-process-names
+       ;; Firefox 79 reports as "MainThread" now
+       {"MainThread" "firefox"
+        "soffice.bin" "libreoffice"})
+
 (lambda process-name [pid]
   "Looks up the name for a process from /proc/<pid>/stat"
   (let [(_ _ name) (-> (.. "/proc/" pid "/stat")
                        (sio.readlines)
                        (first)
                        (string.find (.. pid " %((.+)%)")))]
-    name))
+    (or (. better-process-names name)
+        name)))
 
 (lambda window-list []
   "Returns a list of \"normal\" windows as tables with details."
