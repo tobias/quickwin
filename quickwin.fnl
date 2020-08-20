@@ -19,9 +19,11 @@
        (let [lanes (require :lanes)]
          (lanes.configure {})))
 
+(local dbus (require :ldbus))
 (local lgi (require :lgi))
 (local sfun (require :std.functional))
 (local sio (require :std.io))
+(local socket (require :socket))
 (local stable (require :std.table))
 (local std (require :std))
 (local view (require :fennelview))
@@ -29,6 +31,9 @@
 
 (local gdk (lgi.require "Gdk" "3.0"))
 (local gtk (lgi.require "Gtk" "3.0"))
+
+(local dbus-name "org.tcrawley.quickwin")
+(local dbus-activate-path "/org/tcrawley/quickwin")
 
 (lambda pp [...] (print (view [...])))
 
@@ -217,7 +222,20 @@ filter-text."
                 :process 3
                 :title 4})
 
-(lambda activate-selection [buffer window selection]
+(var activated? false)
+(var current-window nil)
+
+(fn deactivate-window []
+  "Destroys the window if it exists, then sets activated? to false to
+alter the behavior of the main loop."
+  (when current-window
+    (current-window:destroy)
+    (while (gtk.events_pending)
+      (gtk.main_iteration)))
+  (set current-window nil)
+  (set activated? false))
+
+(lambda activate-selection [buffer selection]
   (let [(model iter) (selection:get_selected)]
     (when model
       (let [win-id (-> model (. iter) (. columns.id))]
@@ -226,7 +244,7 @@ filter-text."
           ;; support bidirectional lookup
           (tset phrase-mapping buffer.text win-id)
           (tset phrase-mapping win-id buffer.text)))
-      (window:destroy))))
+      (deactivate-window))))
 
 (lambda rotate-selection [dir tree-view list-store]
   (let [selection (tree-view:get_selection)
@@ -248,11 +266,11 @@ filter-text."
     ;; return true to abort further event processing
     true))
 
-(lambda handle-key-press [buffer tree-view list-store window event]
+(lambda handle-key-press [buffer tree-view list-store _window event]
   (if (= gdk.KEY_Escape event.keyval)
-      (window:destroy)
+      (deactivate-window)
       (= gdk.KEY_Return event.keyval)
-      (activate-selection buffer window (tree-view:get_selection))
+      (activate-selection buffer (tree-view:get_selection))
       (= gdk.KEY_Up event.keyval)
       (rotate-selection :up tree-view list-store)
       (= gdk.KEY_Down event.keyval)
@@ -279,7 +297,6 @@ filter-text."
                          ;;:default_height 300
                          :decorated false
                          :window_position gtk.WindowPosition.CENTER_ALWAYS
-                         :on_destroy gtk.main_quit
                          :on_key_press_event (partial handle-key-press buffer tree-view list-store)
                          1 (gtk.Box
                             {:orientation :VERTICAL
@@ -325,14 +342,41 @@ filter-text."
                                 : title
                                 :full-name (.. process-name " " title)})))))
 
-(lambda activate []
-  (let [window (make-window (window-list))]
-    (window:show_all))
-  (gtk.main))
 
-(lambda init []
-  (start-xevent-listener-thread))
+(lambda init-dbus [bus]
+  (dbus.bus.add_match bus (.. "type='signal',interface='" dbus-name "'"))
+  (bus:flush))
 
-{: activate
- : init}
+(lambda activate-message-received? [bus]
+  (let [msg (bus:pop_message)]
+    (and msg
+         (= dbus-activate-path (msg:get_path)))))
+
+(fn create-and-show-window-if-needed []
+  (when (not current-window)
+    (set current-window (make-window (window-list)))
+    (current-window:show_all)))
+
+(lambda run-app-loop [bus]
+  (init-dbus bus)
+  (set activated? true) ;; always show window on init
+  ;; This is the main loop. It will interleave gtk event handling with
+  ;; dbus event handling in order to consume any dbus activate events
+  ;; that arrive while the window is visible.
+  (while (bus:read_write 0)
+    (when (activate-message-received? bus)
+      (set activated? true))
+    (if activated?
+        (do
+          (create-and-show-window-if-needed)
+          ;; run a single iteration of the event loop, but don't block
+          ;; if there are no pending events
+          (gtk.main_iteration_do false))
+        (socket.sleep 0.1))))
+
+(lambda init [bus]
+  (start-xevent-listener-thread)
+  (run-app-loop bus))
+
+{: init}
 
