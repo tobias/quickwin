@@ -357,6 +357,10 @@ alter the behavior of the main loop."
     (set current-window (make-window (window-list)))
     (current-window:show_all)))
 
+(fn maybe-focus-window []
+  (when current-window
+    (current-window:present)))
+
 (lambda run-app-loop [bus]
   (init-dbus bus)
   (set activated? true) ;; always show window on init
@@ -365,7 +369,8 @@ alter the behavior of the main loop."
   ;; that arrive while the window is visible.
   (while (bus:read_write 0)
     (when (activate-message-received? bus)
-      (set activated? true))
+      (set activated? true)
+      (maybe-focus-window))
     (if activated?
         (do
           (create-and-show-window-if-needed)
