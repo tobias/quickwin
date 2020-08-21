@@ -308,7 +308,7 @@ alter the behavior of the main loop."
     (set buffer.on_deleted_text filter-fn)
     (tree-view:set_activate_on_single_click true)
     (set tree-view.on_row_activated (fn [_ _ _]
-                                      (activate-selection buffer window
+                                      (activate-selection buffer 
                                                           (tree-view:get_selection))))
     (window:set_keep_above true)
     ;; populates the list store with everyting
