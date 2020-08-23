@@ -35,13 +35,43 @@
 (local dbus-name "org.tcrawley.quickwin")
 (local dbus-activate-path "/org/tcrawley/quickwin")
 
+;; quick and dirty multimethods
+(local _mutlifn-dispatch-table {})
+
+(macro multifn [name dispatch-fn]
+  `(fn ,name [...]
+     (let [dispatch-v# (,dispatch-fn ...)
+           f-table# (. _mutlifn-dispatch-table ,name)
+           f# (or (. f-table# dispatch-v#)
+                  (. f-table# :default))]
+       (f# ...))))
+
+(fn multi [name dispatch-v f]
+  (let [f-table (or (. _mutlifn-dispatch-table name)
+                    {})]
+    (tset f-table dispatch-v f)
+    (tset _mutlifn-dispatch-table name f-table)
+    nil))
+
 (lambda pp [...] (print (view [...])))
+
+(lambda preserve-meta
+  [f xs]
+  (let [mt (getmetatable xs)
+        res (f xs)]
+    (setmetatable res mt)
+    res))
 
 (lambda map [f xs]
   (sfun.map f std.elems xs))
 
+(lambda map-preserve-meta [f xs]
+  (preserve-meta (partial map f) xs))
+
 (lambda filter [f xs]
-  (sfun.filter f std.elems xs))
+  (preserve-meta
+   #(sfun.filter f std.elems $)
+   xs))
 
 (lambda reduce [f init xs]
   (sfun.reduce f init std.elems xs))
@@ -87,6 +117,15 @@
     (for [i start end]
       (table.insert r i))
     r))
+
+;; data types:
+;;
+;; tree-widget:
+;; {:store list-store-object
+;;  :view  tree-view-object}
+;;
+;; item-list - list with a metatable of:
+;; {:type list-type}
 
 (lambda text-column [text pos]
   (gtk.TreeViewColumn
@@ -191,24 +230,38 @@ filter-text."
         (tset window-list 2 f)
         window-list)))
 
-(lambda pre-sort-window-list [window-list]
-  (-> window-list
-      (sort-by-last-active)
-      (make-prior-window-first)))
+(lambda list-type [list]
+  (. (or (getmetatable list) {}) :type))
 
-(lambda window-item-formatter [win-item phrase]
-  [win-item.id phrase win-item.process-name win-item.title])
+(multifn pre-sort-list list-type)
 
-(lambda apply-filter [pre-sorter item-formatter filter-text tree-widget item-list]
+(multi pre-sort-list :window
+       (fn [window-list]
+         (-> window-list
+             (sort-by-last-active)
+             (make-prior-window-first))))
+
+(multifn format-list #(list-type $2))
+
+(multi format-list :window
+       (fn [phrase-mapping window-list]
+         (map #[$.id
+                (or (. phrase-mapping $.id) "")
+                $.process-name
+                $.title]
+              window-list)))
+
+(lambda apply-filter [filter-text tree-widget item-list]
   ;; clone the list so our sorting doesn't effect the outer list
   (let [item-list (stable.clone item-list)
         filtered-list (if (> (string.len filter-text) 0)
                           (->> item-list
-                               (map #(assoc $ :matches (fuzzy-search $.full-name filter-text)))
+                               (map-preserve-meta
+                                #(assoc $ :matches (fuzzy-search $.full-name filter-text)))
                                (filter #(> (length $.matches) 0)))
                           item-list)
         filtered-list (-> filtered-list
-                          (pre-sorter)
+                          (pre-sort-list)
                           (sort-by-match-score filter-text))
         selected-idx (reduce-kv (fn [idx item-idx item]
                                   (if (= filter-text (. phrase-mapping item.id))
@@ -218,15 +271,9 @@ filter-text."
                                 filtered-list)]
     (tree-widget.store:clear)
     (->> filtered-list
-         (map (fn [item]
-                (tree-widget.store:append
-                 (item-formatter item
-                                 (or (. phrase-mapping item.id)
-                                                             ""))))))
+         (format-list phrase-mapping)
+         (map #(tree-widget.store:append $)))
     (set-selection tree-widget selected-idx)))
-
-(local apply-filter-to-win-list
-       (partial apply-filter pre-sort-window-list window-item-formatter))
 
 (lambda string? [s]
   (= "string" (type s)))
@@ -305,8 +352,7 @@ alter the behavior of the main loop."
                              2 (text-column "Process" columns.process)
                              3 (text-column "Window" columns.title)})}
         buffer (gtk.EntryBuffer)
-        filter-fn #(apply-filter-to-win-list
-                    buffer.text tree-widget window-list)
+        filter-fn #(apply-filter buffer.text tree-widget window-list)
         window (doto (gtk.Window
                       {:title "QuickWin"
                        :default_width 500
@@ -329,7 +375,7 @@ alter the behavior of the main loop."
                                (tree-widget.view:get_selection))))
     (window:set_keep_above true)
     ;; populates the list store with everyting
-    (apply-filter-to-win-list "" tree-widget window-list)
+    (apply-filter "" tree-widget window-list)
     window))
 
 (local better-process-names
@@ -348,16 +394,18 @@ alter the behavior of the main loop."
 
 (lambda window-list []
   "Returns a list of \"normal\" windows as tables with details."
-  (->> (xc:get_win_list)
-       (map #{:id $ :type (xc:get_win_type $)})
-       (filter #(= "normal" (. $ :type)))
-       (map #(let [pid (xc:get_pid_of_win $.id)
-                   process-name (process-name pid)
-                   title (xc:get_win_title $.id)]
-               (stable.merge $ {: pid
-                                : process-name
-                                : title
-                                :full-name (.. process-name " " title)})))))
+  (let [l (->> (xc:get_win_list)
+               (map #{:id $ :type (xc:get_win_type $)})
+               (filter #(= "normal" (. $ :type)))
+               (map #(let [pid (xc:get_pid_of_win $.id)
+                           process-name (process-name pid)
+                           title (xc:get_win_title $.id)]
+                       (stable.merge $ {: pid
+                                        : process-name
+                                        : title
+                                        :full-name (.. process-name " " title)}))))]
+    (setmetatable l {:type :window})
+    l))
 
 
 (lambda init-dbus [bus]
