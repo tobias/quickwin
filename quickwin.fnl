@@ -158,8 +158,8 @@ filter-text."
         score)
       0))
 
-(lambda set-selection [tree-view idx]
-  (let [selection (tree-view:get_selection)]
+(lambda set-selection [tree-widget idx]
+  (let [selection (tree-widget.view:get_selection)]
     (selection:select_path (gtk.TreePath.new_from_string (.. (- idx 1))))))
 
 (lambda sort-by-last-active [window-list]
@@ -191,28 +191,42 @@ filter-text."
         (tset window-list 2 f)
         window-list)))
 
-(lambda apply-filter [filter-text tree-view window-list list-store]
-  (let [window-list (stable.clone window-list)
-        filtered-win-list (if (> (string.len filter-text) 0)
-                              (->> window-list
-                                   (map #(assoc $ :matches (fuzzy-search $.full-name filter-text)))
-                                   (filter #(> (length $.matches) 0)))
-                              window-list)
-        filtered-win-list (-> filtered-win-list
-                              (sort-by-last-active)
-                              (make-prior-window-first)
-                              (sort-by-match-score filter-text))
-        selected-idx (reduce-kv (fn [idx win-idx win]
-                                  (if (= filter-text (. phrase-mapping win.id))
-                                      win-idx
+(lambda pre-sort-window-list [window-list]
+  (-> window-list
+      (sort-by-last-active)
+      (make-prior-window-first)))
+
+(lambda window-item-formatter [win-item phrase]
+  [win-item.id phrase win-item.process-name win-item.title])
+
+(lambda apply-filter [pre-sorter item-formatter filter-text tree-widget item-list]
+  ;; clone the list so our sorting doesn't effect the outer list
+  (let [item-list (stable.clone item-list)
+        filtered-list (if (> (string.len filter-text) 0)
+                          (->> item-list
+                               (map #(assoc $ :matches (fuzzy-search $.full-name filter-text)))
+                               (filter #(> (length $.matches) 0)))
+                          item-list)
+        filtered-list (-> filtered-list
+                          (pre-sorter)
+                          (sort-by-match-score filter-text))
+        selected-idx (reduce-kv (fn [idx item-idx item]
+                                  (if (= filter-text (. phrase-mapping item.id))
+                                      item-idx
                                       idx))
                                 1
-                                filtered-win-list)]
-    (list-store:clear)
-    (->> filtered-win-list
-         (map (fn [win]
-                (list-store:append [win.id (. phrase-mapping win.id) win.process-name win.title]))))
-    (set-selection tree-view selected-idx)))
+                                filtered-list)]
+    (tree-widget.store:clear)
+    (->> filtered-list
+         (map (fn [item]
+                (tree-widget.store:append
+                 (item-formatter item
+                                 (or (. phrase-mapping item.id)
+                                                             ""))))))
+    (set-selection tree-widget selected-idx)))
+
+(local apply-filter-to-win-list
+       (partial apply-filter pre-sort-window-list window-item-formatter))
 
 (lambda string? [s]
   (= "string" (type s)))
@@ -246,15 +260,15 @@ alter the behavior of the main loop."
           (tset phrase-mapping win-id buffer.text)))
       (deactivate-window))))
 
-(lambda rotate-selection [dir tree-view list-store]
-  (let [selection (tree-view:get_selection)
+(lambda rotate-selection [dir tree-widget]
+  (let [selection (tree-widget.view:get_selection)
         curr-row (first (selection:get_selected_rows))
         ;; converting from gtk 0-indexing to lua 1-indexing
         row-idx (+ 1 (first (curr-row:get_indices)))
         new-row-idx (if (= dir :down)
                         (+ row-idx 1)
                         (- row-idx 1))
-        total-rows (list-store:iter_n_children)
+        total-rows (tree-widget.store:iter_n_children)
         new-row-idx (if (> new-row-idx total-rows)
                         1
 
@@ -262,19 +276,19 @@ alter the behavior of the main loop."
                         total-rows
 
                         new-row-idx)]
-    (set-selection tree-view new-row-idx)
+    (set-selection tree-widget new-row-idx)
     ;; return true to abort further event processing
     true))
 
-(lambda handle-key-press [buffer tree-view list-store _window event]
+(lambda handle-key-press [buffer tree-widget _window event]
   (if (= gdk.KEY_Escape event.keyval)
       (deactivate-window)
       (= gdk.KEY_Return event.keyval)
-      (activate-selection buffer (tree-view:get_selection))
+      (activate-selection buffer (tree-widget.view:get_selection))
       (= gdk.KEY_Up event.keyval)
-      (rotate-selection :up tree-view list-store)
+      (rotate-selection :up tree-widget)
       (= gdk.KEY_Down event.keyval)
-      (rotate-selection :down tree-view list-store)
+      (rotate-selection :down tree-widget)
       false))
 
 (lambda make-window [window-list]
@@ -282,37 +296,40 @@ alter the behavior of the main loop."
                                        columns.phrase lgi.GObject.Type.STRING
                                        columns.process lgi.GObject.Type.STRING
                                        columns.title lgi.GObject.Type.STRING})
+        tree-widget {:store list-store
+                     :view (gtk.TreeView
+                            {:id :view
+                             :model list-store
+                             :headers-visible false
+                             1 (italic-text-column "Phrase" columns.phrase)
+                             2 (text-column "Process" columns.process)
+                             3 (text-column "Window" columns.title)})}
         buffer (gtk.EntryBuffer)
-        tree-view (gtk.TreeView
-                   {:id :view
-                    :model list-store
-                    :headers-visible false
-                    1 (italic-text-column "Phrase" columns.phrase)
-                    2 (text-column "Process" columns.process)
-                    3 (text-column "Window" columns.title)})
-        filter-fn #(apply-filter buffer.text tree-view window-list list-store)
+        filter-fn #(apply-filter-to-win-list
+                    buffer.text tree-widget window-list)
         window (doto (gtk.Window
-                        {:title "QuickWin"
-                         :default_width 500
-                         ;;:default_height 300
-                         :decorated false
-                         :window_position gtk.WindowPosition.CENTER_ALWAYS
-                         :on_key_press_event (partial handle-key-press buffer tree-view list-store)
-                         1 (gtk.Box
-                            {:orientation :VERTICAL
-                             :spacing 3
-                             1 (gtk.Entry {:id :filter
-                                           : buffer})
-                             2 tree-view})}))]
+                      {:title "QuickWin"
+                       :default_width 500
+                       ;;:default_height 300
+                       :decorated false
+                       :window_position gtk.WindowPosition.CENTER_ALWAYS
+                       :on_key_press_event (partial handle-key-press buffer tree-widget)
+                       1 (gtk.Box
+                          {:orientation :VERTICAL
+                           :spacing 3
+                           1 (gtk.Entry {:id :filter
+                                         : buffer})
+                           2 tree-widget.view})}))]
     (set buffer.on_inserted_text filter-fn)
     (set buffer.on_deleted_text filter-fn)
-    (tree-view:set_activate_on_single_click true)
-    (set tree-view.on_row_activated (fn [_ _ _]
-                                      (activate-selection buffer 
-                                                          (tree-view:get_selection))))
+    (tree-widget.view:set_activate_on_single_click true)
+    (set tree-widget.view.on_row_activated
+         (fn [_ _ _]
+           (activate-selection buffer 
+                               (tree-widget.view:get_selection))))
     (window:set_keep_above true)
     ;; populates the list store with everyting
-    (apply-filter "" tree-view window-list list-store)
+    (apply-filter-to-win-list "" tree-widget window-list)
     window))
 
 (local better-process-names
