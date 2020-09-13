@@ -463,13 +463,30 @@ alter the behavior of the main loop."
     (setmetatable l {:type :window})
     l))
 
+;; TODO: store this in a configuration file
 (lambda action-list []
   "Returns a list of available actions."
-  (let [l [{:id :lock
-            :name "lock screen"
-            :title "Lock the screen"
-            :full-name "lock screen Lock the screen"
-            :action "/usr/bin/xflock4"}]]
+  (let [l (->> [{:id :play
+                 :name "play/pause"
+                 :title "Play or pause active music player"
+                 :action "/usr/bin/xdotool key XF86AudioPlay"}
+                {:id :volume-up
+                 :name "volume up"
+                 :title "Increase output volume"
+                 :action "/usr/bin/xdotool key XF86AudioRaiseVolume"}
+                {:id :volume-down
+                 :name "volume down"
+                 :title "Decrease output volume"
+                 :action "/usr/bin/xdotool key XF86AudioLowerVolume"}
+                {:id :mute
+                 :name "mute"
+                 :title "Mute output volume"
+                 :action "/usr/bin/xdotool key XF86AudioMute"}
+                {:id :lock
+                 :name "lock screen"
+                 :title "Lock the screen"
+                 :action "/usr/bin/xflock4"}]
+               (map #(stable.merge $ {:full-name (.. $.name " " $.title)})))]
     (setmetatable l {:type :action})
     l))
 
