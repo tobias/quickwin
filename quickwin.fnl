@@ -21,6 +21,7 @@
 
 (local dbus (require :ldbus))
 (local lgi (require :lgi))
+(local os (require :os))
 (local sfun (require :std.functional))
 (local sio (require :std.io))
 (local socket (require :socket))
@@ -162,7 +163,7 @@
     (xc:listen (fn [ev id]
                  (when (or (= "a" ev)  ;; activated
                            (= "x" ev)) ;; closed
-                   (tset window-focus-times id
+                   (tset window-focus-times (tostring id)
                          (if (= "a" ev)
                              (socket.gettime)
                              nil))
@@ -173,14 +174,14 @@
   (let [lane (lanes.gen "*" xevent-listener)]
     (lane)))
 
-(lambda match-score [filter-text win]
+(lambda match-score [filter-text item]
   "Scores a match set. The score is the number of matches + a boosting
 factor for the compactness of the matches related to the length of the
 filter-text."
-  (if win.matches
+  (if item.matches
       (let [filter-len (length filter-text)
-            base-score (length win.matches)
-            first-match (first win.matches)
+            base-score (length item.matches)
+            first-match (first item.matches)
             base-score (if (= 1 (first first-match))
                            ;; the first match has the same char as the
                            ;; start of the full name, so boost it
@@ -193,7 +194,7 @@ filter-text."
                                 (- filter-len
                                    (- (last $2) (first $2))))))
                    base-score
-                   win.matches)]
+                   item.matches)]
         score)
       0))
 
@@ -209,8 +210,8 @@ filter-text."
                          b-time (or (. focus-data b.id) 0)]
                      (> a-time b-time))))))
 
-(lambda sort-by-match-score [window-list filter-text]
-  (stable.sort window-list
+(lambda sort-by-match-score [list filter-text]
+  (stable.sort list
                #(if (and $1 $2)
                     (let [score-1 (match-score filter-text $1)
                           score-2 (match-score filter-text $2)]
@@ -241,6 +242,9 @@ filter-text."
              (sort-by-last-active)
              (make-prior-window-first))))
 
+(multi pre-sort-list :action
+       (fn [action-list] action-list))
+
 (multifn format-list #(list-type $2))
 
 (multi format-list :window
@@ -251,9 +255,20 @@ filter-text."
                 $.title]
               window-list)))
 
-(lambda apply-filter [filter-text tree-widget item-list]
-  ;; clone the list so our sorting doesn't effect the outer list
-  (let [item-list (stable.clone item-list)
+(multi format-list :action
+       (fn [phrase-mapping action-list]
+         (map #[$.id
+                (or (. phrase-mapping $.id) "")
+                $.name
+                $.title]
+              action-list)))
+
+(var active-list-idx 1)
+
+(lambda apply-filter [filter-text tree-widget lists]
+  (let [{: items} (. lists active-list-idx)
+        ;; clone the list so our sorting doesn't effect the outer list
+        item-list (stable.clone items)
         filtered-list (if (> (string.len filter-text) 0)
                           (->> item-list
                                (map-preserve-meta
@@ -280,8 +295,8 @@ filter-text."
 
 (local columns {:id 1
                 :phrase 2
-                :process 3
-                :title 4})
+                :name 3
+                :description 4})
 
 (var activated? false)
 (var current-window nil)
@@ -296,15 +311,20 @@ alter the behavior of the main loop."
   (set current-window nil)
   (set activated? false))
 
-(lambda activate-selection [buffer selection]
+(lambda activate-list-item [id lists]
+  (let [active-list (. lists active-list-idx)
+        {: activator} active-list]
+    (activator id active-list)))
+
+(lambda activate-selection [buffer selection lists]
   (let [(model iter) (selection:get_selected)]
     (when model
-      (let [win-id (-> model (. iter) (. columns.id))]
-        (xc:activate_win win-id)
+      (let [id (-> model (. iter) (. columns.id))]
+        (activate-list-item id lists)
         (when (> (length buffer.text) 0)
           ;; support bidirectional lookup
-          (tset phrase-mapping buffer.text win-id)
-          (tset phrase-mapping win-id buffer.text)))
+          (tset phrase-mapping buffer.text id)
+          (tset phrase-mapping id buffer.text)))
       (deactivate-window))))
 
 (lambda rotate-selection [dir tree-widget]
@@ -327,55 +347,91 @@ alter the behavior of the main loop."
     ;; return true to abort further event processing
     true))
 
-(lambda handle-key-press [buffer tree-widget _window event]
-  (if (= gdk.KEY_Escape event.keyval)
-      (deactivate-window)
-      (= gdk.KEY_Return event.keyval)
-      (activate-selection buffer (tree-widget.view:get_selection))
-      (= gdk.KEY_Up event.keyval)
-      (rotate-selection :up tree-widget)
-      (= gdk.KEY_Down event.keyval)
-      (rotate-selection :down tree-widget)
-      false))
+(lambda rotate-active-list [label filter-fn lists]
+  (let [next-idx (+ 1 active-list-idx)
+        next-idx (if (> next-idx (length lists)) 1 next-idx)
+        {: name} (. lists next-idx)]
+    (label:set_text name)
+    (set active-list-idx next-idx)
+    (filter-fn)
+    ;; return true to abort further event processing
+    true))
 
-(lambda make-window [window-list]
-  (let [list-store (gtk.ListStore.new {columns.id lgi.GObject.Type.INT64
+(lambda handle-key-press-fn [key-press-handlers]
+  (fn [_window event]
+    (let [handler (. key-press-handlers event.keyval)]
+      (if handler
+          (handler)
+          false))))
+
+(lambda activate-window [id _window-list]
+  (xc:activate_win id))
+
+(lambda activate-action [id action-list]
+  (let [{: items} action-list
+        {: action} (->> items
+                        (filter #(= $.id id))
+                        (first))]
+    (os.execute action)))
+
+(lambda make-window [window-list action-list]
+  (let [list-store (gtk.ListStore.new {columns.id lgi.GObject.Type.STRING
                                        columns.phrase lgi.GObject.Type.STRING
-                                       columns.process lgi.GObject.Type.STRING
-                                       columns.title lgi.GObject.Type.STRING})
+                                       columns.name lgi.GObject.Type.STRING
+                                       columns.description lgi.GObject.Type.STRING})
         tree-widget {:store list-store
                      :view (gtk.TreeView
                             {:id :view
                              :model list-store
                              :headers-visible false
                              1 (italic-text-column "Phrase" columns.phrase)
-                             2 (text-column "Process" columns.process)
-                             3 (text-column "Window" columns.title)})}
+                             2 (text-column "Name" columns.name)
+                             3 (text-column "Description" columns.description)})}
+        lists [{:name "Windows"
+                :activator activate-window
+                :items window-list}
+               {:name "Actions"
+                :activator activate-action
+                :items action-list}]
         buffer (gtk.EntryBuffer)
-        filter-fn #(apply-filter buffer.text tree-widget window-list)
+        filter-fn #(apply-filter buffer.text tree-widget lists)
+        label (gtk.Label.new "Windows")
+        key-press-handlers {gdk.KEY_Escape #(deactivate-window)
+                            gdk.KEY_Return #(activate-selection
+                                             buffer (tree-widget.view:get_selection)
+                                             lists)
+                            gdk.KEY_Up #(rotate-selection :up tree-widget)
+                            gdk.KEY_Down #(rotate-selection :down tree-widget)
+                            gdk.KEY_Tab #(rotate-active-list
+                                          label
+                                          filter-fn
+                                          lists)}
         window (doto (gtk.Window
                       {:title "QuickWin"
                        :default_width 500
                        ;;:default_height 300
                        :decorated false
                        :window_position gtk.WindowPosition.CENTER_ALWAYS
-                       :on_key_press_event (partial handle-key-press buffer tree-widget)
+                       :on_key_press_event (handle-key-press-fn key-press-handlers)
                        1 (gtk.Box
                           {:orientation :VERTICAL
                            :spacing 3
-                           1 (gtk.Entry {:id :filter
+                           1 label 
+                           2 (gtk.Entry {:id :filter
                                          : buffer})
-                           2 tree-widget.view})}))]
+                           3 tree-widget.view})}))]
     (set buffer.on_inserted_text filter-fn)
     (set buffer.on_deleted_text filter-fn)
     (tree-widget.view:set_activate_on_single_click true)
     (set tree-widget.view.on_row_activated
          (fn [_ _ _]
            (activate-selection buffer 
-                               (tree-widget.view:get_selection))))
+                               (tree-widget.view:get_selection)
+                               lists)))
     (window:set_keep_above true)
+    (set active-list-idx 1)
     ;; populates the list store with everyting
-    (apply-filter "" tree-widget window-list)
+    (filter-fn)
     window))
 
 (local better-process-names
@@ -395,7 +451,7 @@ alter the behavior of the main loop."
 (lambda window-list []
   "Returns a list of \"normal\" windows as tables with details."
   (let [l (->> (xc:get_win_list)
-               (map #{:id $ :type (xc:get_win_type $)})
+               (map #{:id (tostring $) :type (xc:get_win_type $)})
                (filter #(= "normal" (. $ :type)))
                (map #(let [pid (xc:get_pid_of_win $.id)
                            process-name (process-name pid)
@@ -407,6 +463,15 @@ alter the behavior of the main loop."
     (setmetatable l {:type :window})
     l))
 
+(lambda action-list []
+  "Returns a list of available actions."
+  (let [l [{:id :lock
+            :name "lock screen"
+            :title "Lock the screen"
+            :full-name "lock screen Lock the screen"
+            :action "/usr/bin/xflock4"}]]
+    (setmetatable l {:type :action})
+    l))
 
 (lambda init-dbus [bus]
   (dbus.bus.add_match bus (.. "type='signal',interface='" dbus-name "'"))
@@ -419,7 +484,7 @@ alter the behavior of the main loop."
 
 (fn create-and-show-window-if-needed []
   (when (not current-window)
-    (set current-window (make-window (window-list)))
+    (set current-window (make-window (window-list) (action-list)))
     (current-window:show_all)))
 
 (fn maybe-focus-window []
