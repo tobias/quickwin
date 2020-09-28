@@ -470,6 +470,14 @@ alter the behavior of the main loop."
                  :name "play/pause"
                  :title "Play or pause active music player"
                  :action "/usr/bin/xdotool key XF86AudioPlay"}
+                {:id :next-track
+                 :name "next track"
+                 :title "Skip to next track"
+                 :action "/usr/bin/xdotool key XF86AudioNext"}
+                {:id :prev-track
+                 :name "previous track"
+                 :title "Skip to previous track"
+                 :action "/usr/bin/xdotool key XF86AudioPrev"}
                 {:id :volume-up
                  :name "volume up"
                  :title "Increase output volume"
