@@ -234,6 +234,11 @@ filter-text."
 (lambda list-type [list]
   (. (or (getmetatable list) {}) :type))
 
+(lambda safe-sub [str start end]
+  (if str
+      (str:sub start end)
+      ""))
+
 (multifn pre-sort-list list-type)
 
 (multi pre-sort-list :window
@@ -252,7 +257,7 @@ filter-text."
          (map #[$.id
                 (or (. phrase-mapping $.id) "")
                 $.process-name
-                $.title]
+                (safe-sub $.title 1 70)]
               window-list)))
 
 (multi format-list :action
@@ -260,7 +265,7 @@ filter-text."
          (map #[$.id
                 (or (. phrase-mapping $.id) "")
                 $.name
-                $.title]
+                (safe-sub $.title 1 70)]
               action-list)))
 
 (var active-list-idx 1)
