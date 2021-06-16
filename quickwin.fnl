@@ -402,6 +402,7 @@ alter the behavior of the main loop."
         filter-fn #(apply-filter buffer.text tree-widget lists)
         label (gtk.Label.new "Windows")
         key-press-handlers {gdk.KEY_Escape #(deactivate-window)
+                            103 #(deactivate-window) ;; ctrl-g
                             gdk.KEY_Return #(activate-selection
                                              buffer (tree-widget.view:get_selection)
                                              lists)
